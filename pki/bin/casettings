@@ -1,0 +1,20 @@
+SIPCADIR="../ca"
+# Name in OpenSSL conf
+SIPCANAME="SIP_CA"
+SIPICADIR="../ica"
+ROOTCACERT=ca/cacert.pem
+ROOTCAKEY=ca/private/cakey.pem
+INTERMEDIATECERT=ica/cacert.pem
+INTERMEDIATECAKEY=ica/private/cakey.pem
+
+FAKECADIR="../fakeca"
+FAKECANAME="FAKE_CA"
+FAKEROOTCACERT=ca/cacert.pem
+FAKEROOTCAKEY=ca/private/cakey.pem
+
+FAKEINTERMEDIATECERT=ica/cacert.pem
+FAKEINTERMEDIATECAKEY=ica/private/cakey.pem
+OPENSSL=openssl
+OPENSSLCNF="../etc/openssl.cnf"
+COMPANYNAME="SIP TLS-o-matic Inc"
+export COMPANYNAME SIPCADIR SIPICADIR FAKECADIR

@@ -1,0 +1,106 @@
+#!/bin/sh
+set -x
+. bin/casettings
+export $COMPANYNAME
+if test -z "$1" -o  -z "$2" -o -z "$3"
+then
+        echo "ERROR: $0 <servername> <testname> <comment> <optional type>"
+        exit 1
+fi
+# Test name used as file names
+TESTNAME="$2"
+EXTRAARG=""
+
+ALGO=secp521r1
+KEYTYPE=ELLIPTIC
+# Default values for RSA keys
+KEYARG="-newkey rsa:2048"
+DIGESTARG=""
+CLIENTNAME="$1"
+CERTDIR="$TESTNAME"
+SERIAL=$(cat ca/serial)
+# Hexadecimal iteration (accoring to Google :-) )
+SERIAL=$(echo "obase=ibase=16;$SERIAL+1"|bc)
+KEYFILE="$2.key.pem"
+CSIPILE="$2.csr.pem"
+PUBFILE="$2.pubkey.pem"
+CERTFILE="$2.cert.pem"
+EXTENSIONS="client_cert"
+export SUBJECTALTNAMES="DNS:$CLIENTNAME" COMPANYNAME="$COMPANYNAME" COMMONNAME="$CLIENTNAME"
+export NSCOMMENT="$3"
+export SIPICADIR="../ica"
+export SIPCADIR="../ca"
+
+#========================= Various test cases
+if test "$4" = "EXPIRED"
+then
+    EXTRAARG="-startdate 18900515121212Z -enddate 19991231235959Z"
+fi
+if test "$4" = "NOTVALIDYET"
+then
+    # Stardate 1207.3 - Star Trek Discovery
+    EXTRAARG="-startdate 22560511121212Z -enddate 22591231235959Z"
+fi
+if test "$4" = "BADSAN"
+then
+	# Set SAN to something different
+	SUBJECTALTNAMES="DNS:ccm.sr.se, DNS:landsort.sr.se, IP:127.0.0.1"
+fi
+if test "$4" = "CLIENTCERT"
+then
+	# Set SAN to something different
+	EXTENSIONS="client_cert"
+fi
+if test "$4" = "RSA512"
+then
+	# Test with RSA short key and md5 checksums
+	KEYARG="512"
+	DIGESTARG=""
+	REQDIGEST="-sha1"
+	KEYTYPE="RSA"
+fi
+if test "$4" = "CODESIGN"
+then
+	# Test with a codesign cert, not server auth
+	EXTENSIONS="codesign_cert"
+fi
+if test "$4" = "ICASIGN"
+then
+	# Test with a signature by intermediate cert
+	SIPCANAME="SIP_ICA"
+	SERIAL=$(cat ica/serial)
+	# Hexadecimal iteration (accoring to Google :-) )
+	SERIAL=$(echo "obase=ibase=16;$SERIAL+1"|bc)
+fi
+if test "$4" = "FAKECASRV"
+then
+	# Test with a signature by fake CA cert
+	SIPCANAME="FAKE_CA"
+fi
+
+
+mkdir -p clientcerts
+cd clientcerts
+#========================= Let's go create ourselves a certificate
+mkdir -p "$CERTDIR"
+echo "===> Creating CLIENT cert for client server $1 in $CERTDIR"
+if test "$KEYTYPE" = ELLIPTIC
+then
+	# For Elliptic curves - generate key pair with ecparam
+	$OPENSSL ecparam -out $CERTDIR/$KEYFILE -genkey  -name $ALGO -noout
+else
+	# Generate RSA KEY pair
+	$OPENSSL genrsa -out $CERTDIR/$KEYFILE $KEYARG
+	# Export public key
+	$OPENSSL rsa -in $CERTDIR/$KEYFILE -outform PEM -pubout -out $CERTDIR/$PUBFILE
+fi
+"$OPENSSL" req -new -batch -nodes -key $CERTDIR/$KEYFILE $REQDIGEST  -out $CERTDIR/$CSIPILE -config $OPENSSLCNF
+"$OPENSSL" ca -batch -config "$OPENSSLCNF" -name "$SIPCANAME" -extensions "$EXTENSIONS" -utf8 $DIGESTARG $EXTRAARG -out $CERTDIR/$CERTFILE -infiles $CERTDIR/$CSIPILE
+# Show the magic
+if test -f "$CERTDIR/$CERTFILE"
+then
+    $OPENSSL x509 -text -noout -in "$CERTDIR/$CERTFILE"
+else
+   echo "ERROR: Certifikat saknas."
+   exit 1
+fi
