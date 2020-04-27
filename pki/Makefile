@@ -105,6 +105,10 @@ ca/cacert.pem: ca/serial ca/private/cakey.pem
 	@echo "==> Signing key for the CA and creating cert"
 	COMMONNAME="SIP TLS-o-matic test CA"  $(OPENSSL) req -new -x509 -sha512 -batch  -nodes -key ca/private/cakey.pem -days 1800 -utf8 -extensions v3_intermediate_ca -out $(CACERT) $(OSSLCONF)
 
+ca/cacert.der: ca/cacert.pem
+	# Convert to DER format for SNOM phones
+	@$(OPENSSL}  x509 -inform PEM -outform DER -text -in $(CACERT) -out ca/cecert.der
+
 ica/cacert.pem: ica/serial ica/private/cakey.pem ica/cacsr.pem
 	@echo "==> Signing key for the Intermediate CA and creating cert"
 	@$(OPENSSL) ca -batch $(OSSLCONF) -name SIP_CA -utf8 -extensions v3_intermediate_ca -cert $(CACERT) -out $(ICACERT) -infiles ica/cacsr.pem
@@ -132,25 +136,20 @@ newcerts:
 
 fakeca: fakeca/cacert.pem csr newcerts
 	@echo "===> Creating Fake Evil CA"
-	@echo 1000 > fakeca/serial
 	@touch index.txt
 	@mkdir -p fakeca/private
 	@echo "Done!"
 	@$(OPENSSL) x509 -noout -in $(FAKECACERT) -text
 	@echo "===> Created FAKE CA"
 
-ca: ca/cacert.pem csr newcerts
+ca: ca/cacert.pem csr newcerts ca/cacert.der
 	@echo "===> Creating CA"
-	@echo 1000 > ca/serial
-	@touch ca/index.txt
-	@mkdir -p ca/private
 	@echo "Done!"
 	@$(OPENSSL) x509 -noout -in $(CACERT) -text
 	@echo "===> Created CA"
 
 fakeica: fakeica/cacert.pem
 	@echo "===> Creating FAKE Intermediate CA"
-	@echo 1000 > fakeica/serial
 	@touch fakeica/index.txt
 	@mkdir -p fakeica/private
 	@echo "Done!"
@@ -159,7 +158,6 @@ fakeica: fakeica/cacert.pem
 
 intermediateca: ica/cacert.pem
 	@echo "===> Creating Intermediate CA"
-	@echo 1000 > ica/serial
 	@touch ica/index.txt
 	@mkdir -p ica/private
 	@echo "Done!"
@@ -207,31 +205,35 @@ testsuite: ca fakeca testcerts fakeica intermediateca
 .PHONY: testsuite testcerts
 
 servercerts/CERTSRV01/CERTSRV01.cert.pem: 
-	@bin/server-cert $SERVERNAME CERTSRV01 "CERTSRV01: Korrekt cert"  NORMAL
+	@bin/server-cert $(SERVERNAME) CERTSRV01 "CERTSRV01: Korrekt cert"  NORMAL
 
 servercerts/CERTSRV02/CERTSRV02.cert.pem: 
-	@bin/server-cert $SERVERNAME CERTSRV02 "CERTSRV02: Expired cert. Not ok."  EXPIRED
+	@bin/server-cert $(SERVERNAME) CERTSRV02 "CERTSRV02: Expired cert. Not ok."  EXPIRED
 
 servercerts/CERTSRV03/CERTSRV03.cert.pem:
-	@bin/server-cert $SERVERNAME CERTSRV03 "CERTSRV03: Future cert. Not ok."  NOTVALIDYET
+	@bin/server-cert $(SERVERNAME) CERTSRV03 "CERTSRV03: Future cert. Not ok."  NOTVALIDYET
 
 servercerts/CERTSRV04/CERTSRV04.cert.pem:
-	@bin/server-cert $SERVERNAME CERTSRV04 "CERTSRV04: Bad SubjectAltName. Not ok."  BADSAN
+	@bin/server-cert $(SERVERNAME) CERTSRV04 "CERTSRV04: Bad SubjectAltName. Not ok."  BADSAN
 
 servercerts/CERTSRV05/CERTSRV05.cert.pem:
-	@bin/server-cert $SERVERNAME CERTSRV05 "CERTSRV05: Bad usage (Client). Not ok."  CLIENTCERT
+	@bin/server-cert $(SERVERNAME) CERTSRV05 "CERTSRV05: Bad usage (Client). Not ok."  CLIENTCERT
 
 servercerts/CERTSRV06/CERTSRV06.cert.pem:
-	@bin/server-cert $SERVERNAME CERTSRV06 "CERTSRV06: Bad cert (512bits). Not ok."  RSA512
+	@bin/server-cert $(SERVERNAME) CERTSRV06 "CERTSRV06: Bad cert (512bits). Not ok."  RSA512
 
 servercerts/CERTSRV07/CERTSRV07.cert.pem:
-	@bin/server-cert $SERVERNAME CERTSRV07 "CERTSRV07: Bad cert (CodeSign, not server). Not ok."  CODESIGN
+	@bin/server-cert $(SERVERNAME) CERTSRV07 "CERTSRV07: Bad cert (CodeSign, not server). Not ok."  CODESIGN
+
+servercerts/CERTSRV08/CERTSRV08.cert.pem: ca/cacert.pem
+	@bin/server-cert "test2.sip.tls-o-matic.com" CERTSRV08 "CERTSRV08: Signed by standard CA. ok."  NORMAL
 
 servercerts/CERTSRV10/CERTSRV10.cert.pem:
-	@bin/server-cert $SERVERNAME CERTSRV10 "CERTSRV10: Signed by I-CA. ok."  ICASIGN
+	@bin/server-cert $(SERVERNAME) CERTSRV10 "CERTSRV10: Signed by I-CA. ok."  ICASIGN
 
 servercerts/CERTSRV15/CERTSRV15.cert.pem: fakeca/cacert.pem
-	@bin/server-cert $SERVERNAME CERTSRV15 "CERTSRV15: Signed by Fake CA. Not ok."  FAKECASRV
+	@bin/server-cert $(SERVERNAME) CERTSRV15 "CERTSRV15: Signed by Fake CA. Not ok."  FAKECASRV
+
 
 clientcerts/CERTCLIENT01/CERTCLIENT01.cert.pem: ca/cacert.pem
 	@bin/client-cert tlsclient-001  CERTCLIENT01 "CERTCLIENT01: Signed by real CA. ok."  NORMAL
@@ -250,6 +252,7 @@ testcerts: ca/cacert.pem csr client fakeca fakeica intermediateca private ca/pri
 	servercerts/CERTSRV05/CERTSRV05.cert.pem \
 	servercerts/CERTSRV06/CERTSRV06.cert.pem \
 	servercerts/CERTSRV07/CERTSRV07.cert.pem \
+	servercerts/CERTSRV08/CERTSRV08.cert.pem \
 	servercerts/CERTSRV10/CERTSRV10.cert.pem \
 	servercerts/CERTSRV15/CERTSRV15.cert.pem \
 	clientcerts/CERTCLIENT01/CERTCLIENT01.cert.pem \
