@@ -1,4 +1,4 @@
-RRP Test Intermediate CA
+SIP Test Intermediate CA
 ------------------------
 This is an example CA for testing.
 
